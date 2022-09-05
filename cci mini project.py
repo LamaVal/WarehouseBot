@@ -2,6 +2,29 @@ import cv2 as cv
 import numpy as np
 
 
+def refinedContours(img,per = 0.01):
+    blur = cv.GaussianBlur(img,(5,5),cv.BORDER_DEFAULT)
+    canny = cv.Canny(blur,120,230)
+    contours,heir = cv.findContours(canny,cv.RETR_LIST,cv.CHAIN_APPROX_SIMPLE)
+
+    rcontours = []#for storing points of approx points
+    for i in contours:
+        epi = per*cv.arcLength(i,1)
+        refined = cv.approxPolyDP(i,epi,1)
+        for j in refined:
+            if(j[0,1] <62 or j[0,1]>1025):
+                break
+
+        else:
+            rcontours.append(refined)
+    
+    del(blur)
+    del(canny)
+    del(contours)
+    del(heir)
+    return rcontours
+
+
 def Distance(x1,y1,x2,y2):
     x = x1-x2
     y = y1-y2
@@ -12,28 +35,8 @@ def FNode():
     img = cv.imread("cci.png")
     blank = np.zeros(img.shape,"uint8")
 #    grey = cv.cvtColor(img,cv.COLOR_RGB2GRAY)
-    blur = cv.GaussianBlur(img,(5,5),cv.BORDER_DEFAULT)
-    canny = cv.Canny(blur,120,230)
-    contours,heir = cv.findContours(canny,cv.RETR_LIST,cv.CHAIN_APPROX_SIMPLE)
-
-    rcontours = []#for storing points of approx points
-    for i in contours:
-        epi = 0.01*cv.arcLength(i,1)
-    
-        refined = cv.approxPolyDP(i,epi,1)
-        for j in refined:
-            if(j[0,1] <62 or j[0,1]>1025):
-                break
-
-        else:
-            rcontours.append(refined) #contour poins added only if the they are in a certain range i.e. above eryc logo
-            
-    del(blur)
-    del(canny)
-    del(contours)
-    del(heir)
-
-
+     #contour poins added only if the they are in a certain range i.e. above eryc logo
+    rcontours = refinedContours(img)
     
     for i in range(len(rcontours)):                    #filtering the duplicate rows
         rcontours[i] = np.unique(rcontours[i],axis = 0)
@@ -45,7 +48,8 @@ def FNode():
             j-=1
         else:
             i+=1
-
+    
+    
 
     onlyPoints = [] #list unique points // ease to access
     for i in range(len(rcontours)):
@@ -54,7 +58,8 @@ def FNode():
     del rcontours
 
     
-    PosNode = [] 
+
+    PosNode = [] #[  [[][][]]   ]
     PosNode.append([[onlyPoints[0].item(0),onlyPoints[0].item(1)]]) #entire thing to cluster the nodes
     for i in range(len(onlyPoints)):
         for j in range(len(PosNode)):
@@ -81,32 +86,79 @@ def FNode():
    
     del PosNode
     for i in FinalNodes:                            #plotting circles on the main image
-        cv.circle(img,i,30,(255,255,255),-1)
+        cv.circle(img,i,26,(255,255,255),-1)
     
-        #print(i)
 
-    blur = cv.GaussianBlur(img,(5,5),cv.BORDER_DEFAULT)
-    canny = cv.Canny(blur,120,230)
-    contours,heir = cv.findContours(canny,cv.RETR_LIST,cv.CHAIN_APPROX_SIMPLE)
-    rcontours = []
-    for i in contours:
-        epi = 0.01*cv.arcLength(i,1)
-    
-        refined = cv.approxPolyDP(i,epi,1)
-        for j in refined:
-            if(j[0,1] <62 or j[0,1]>1025):
-                break
+    rcontours = refinedContours(img,0.15)
+    cv.drawContours(blank,rcontours,-1,(255,255,255),1)
+    for i in range(len(rcontours)):
+        j = 0
+        n = 0
+        
+        while j<len(rcontours[i])-1:
+            x1 = rcontours[i][j,0].item(0)
+            y1 = rcontours[i][j,0].item(1)
+            x2 = rcontours[i][j+1,0].item(0)
+            y2 = rcontours[i][j+1,0].item(1)
+            if Distance(x1,y1,x2,y2)<500:
+                rcontours[i][j,0,0] = (rcontours[i][j,0,0]+rcontours[i][j+1,0,0])/2
+                rcontours[i][j,0,1] = (rcontours[i][j,0,1]+rcontours[i][j+1,0,1])/2
+                rcontours[i] = rcontours[i][:-1]
+            j+=1
+    #print(rcontours[1][0,0,0])        
+    connections = []
+    for i in range(len(FinalNodes)):
+        connections.append([])
+
+
+
+    i = 0
+    while i< len(rcontours):
+        if not(len(rcontours[i])==2):
+            rcontours.pop(i)
         else:
-            rcontours.append(refined)
+            i+=1
+    for i in rcontours:
+        cv.drawContours(blank,i,-1,(0,0,255),4)
+        #print(i,'\n\n\n')
+
+    for i in rcontours:
+        n = 0
+        a = []
+        #print(i[0,0]) for (x,y)
+        x1 = i[0,0,0]
+        y1 = i[0,0,1]
+        x3 = i[1,0,0]
+        y3 = i[1,0,1]
+        for j in range(len(FinalNodes)):
+            x2 = FinalNodes[j][0]
+            y2 = FinalNodes[j][1]
+
+            if Distance(x1,y1,x2,y2)<1500 or Distance(x3,y3,x2,y2)<1500:
+                n +=1
+                a.append(j)
+            if n>=2:
+                connections[a[0]].append(a[1])
+                connections[a[1]].append(a[0])
+                
+                break
     
     
+    for i in connections:
+        connections[connections.index(i)] = list(set(i))
+    
+    for i in range(len(connections)):
+        for j in connections[i]:
+            cv.line(blank,FinalNodes[i],FinalNodes[j],(255,0,0),2)
+    
+    for i in range(len(FinalNodes)):
+        cv.putText(blank,str(i),FinalNodes[i],cv.FONT_HERSHEY_TRIPLEX,1,(255,255,0),1)
     #check for refined points of the lines
     #check if any of the nodes are in 900 radius then it is connected. 
-
-
-    cv.imshow("pointOnBlank",img)
+    #cv.imshow("any", blank)
+    cv.imshow("pointOnBlank",blank)  
+    cv.imshow("main",img) 
     cv.waitKey(0)
-
     
 
 FNode()
